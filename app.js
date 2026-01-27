@@ -1,4 +1,4 @@
-// app.js — загружает ВСЕ товары из all_products.pl (2025-01-27 версия)
+// app.js — загружает ВСЕ товары из all_products.pl (финальная версия на 27.01.2026)
 
 document.addEventListener('DOMContentLoaded', () => {
   const productsContainer = document.getElementById('products');
@@ -6,79 +6,61 @@ document.addEventListener('DOMContentLoaded', () => {
   const errorDiv = document.getElementById('error');
 
   const API_BASE = 'https://sigma.strd.ru/pcgi/api';
-  const CORS_PROXY = 'https://corsproxy.io/?';  // пока используем, потом уберём
+  const CORS_PROXY = 'https://corsproxy.io/?';
 
-  const BATCH_SIZE = 8;  // маленькими пачками, чтобы не перегружать браузер
-
-  async function loadAllProducts() {
-    loading.textContent = 'Получаем полный список товаров...';
+  async function loadAll() {
+    loading.textContent = 'Получаем список всех товаров...';
     errorDiv.style.display = 'none';
-    productsContainer.innerHTML = ''; // очищаем на всякий случай
+    productsContainer.innerHTML = ''; // очищаем старые карточки
 
     try {
-      // Запрашиваем список всех ID
-      const listUrl = `${CORS_PROXY}${encodeURIComponent(API_BASE + '/all_products.pl')}`;
+      // Шаг 1: список ID из all_products.pl
+      const listUrl = CORS_PROXY + encodeURIComponent(API_BASE + '/all_products.pl');
       const listRes = await fetch(listUrl);
-
-      if (!listRes.ok) {
-        throw new Error(`Ошибка получения списка: ${listRes.status} ${listRes.statusText}`);
-      }
+      if (!listRes.ok) throw new Error(`Список: ${listRes.status}`);
 
       const listData = await listRes.json();
-
       if (!listData.success || !Array.isArray(listData.ids)) {
-        throw new Error(listData.error || 'Неверный формат ответа от all_products.pl');
+        throw new Error('all_products.pl вернул неверный формат');
       }
 
       const ids = listData.ids;
       const total = ids.length;
 
-      if (total === 0) {
-        showError('Каталог пуст (ids = 0)');
-        loading.style.display = 'none';
-        return;
-      }
+      if (total === 0) throw new Error('Список товаров пустой');
 
       loading.textContent = `Найдено ${total} товаров. Загружаем...`;
 
-      let loaded = 0;
+      // Шаг 2: загружаем по одному (для надёжности, без батчей пока)
+      let successCount = 0;
+      for (const id of ids) {
+        try {
+          const url = CORS_PROXY + encodeURIComponent(`${API_BASE}/product3.pl?id=${id}`);
+          const res = await fetch(url);
+          if (!res.ok) continue;
 
-      // Загружаем пачками
-      for (let i = 0; i < total; i += BATCH_SIZE) {
-        const batch = ids.slice(i, i + BATCH_SIZE);
-        loading.textContent = `Загружаем ${loaded + 1}–${Math.min(loaded + batch.length, total)} из ${total}...`;
-
-        await Promise.allSettled(
-          batch.map(async (id) => {
-            try {
-              const url = `${CORS_PROXY}${encodeURIComponent(`${API_BASE}/product3.pl?id=${id}`)}`;
-              const res = await fetch(url);
-
-              if (!res.ok) return; // пропускаем молча
-
-              const data = await res.json();
-              if (data.success) {
-                renderProduct(data);
-                loaded++;
-              }
-            } catch {
-              // ошибки отдельных товаров игнорируем
-            }
-          })
-        );
+          const data = await res.json();
+          if (data.success) {
+            renderProduct(data);
+            successCount++;
+            loading.textContent = `Загружено ${successCount} из ${total}...`;
+          }
+        } catch {
+          // пропускаем ошибочные
+        }
       }
 
       loading.style.display = 'none';
 
-      if (loaded === 0) {
-        showError(`Загружено 0 товаров из ${total}. Возможно, проблема с product3.pl`);
-      } else if (loaded < total) {
-        showError(`Загружено ${loaded} из ${total}. Некоторые товары не открылись.`);
+      if (successCount === 0) {
+        showError(`Загружено 0 из ${total}. Проверь all_products.pl и product3.pl`);
+      } else if (successCount < total) {
+        showError(`Загружено ${successCount} из ${total}`);
       }
 
     } catch (err) {
       loading.style.display = 'none';
-      showError('Не удалось загрузить каталог: ' + err.message);
+      showError('Ошибка: ' + err.message);
       console.error(err);
     }
   }
@@ -117,6 +99,6 @@ document.addEventListener('DOMContentLoaded', () => {
     errorDiv.style.display = 'block';
   }
 
-  // Запуск
-  loadAllProducts();
+  // Старт
+  loadAll();
 });
