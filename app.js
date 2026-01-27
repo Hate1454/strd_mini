@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Загружаем все товары параллельно (быстрее)
   Promise.all(
     allProductIds.map(id =>
-      fetch(`https://sigma.strd.ru/pcgi/api/product3.pl?id=${id}`)
+      fetch(`https://corsproxy.io/?${encodeURIComponent('https://sigma.strd.ru/pcgi/api/product3.pl?id=' + id)}`)
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status} для id=${id}`);
           return res.json();
