@@ -1,97 +1,95 @@
-// Ждём готовности MAX Bridge
-function initApp() {
-  if (!window.WebApp) {
-    console.error("MAX Bridge не загружен");
-    showError("Ошибка: не удалось подключиться к MAX");
-    return;
-  }
+// app.js — версия "показать все товары сразу"
 
-  WebApp.ready(); // Сообщаем, что приложение готово
-
-  // Получаем start_param из диплинка (например: ?startapp=12345,78901)
-  const startParam = WebApp.initDataUnsafe?.start_param || '';
-
-  let productIds = [];
-  if (startParam) {
-    productIds = startParam.split(',').map(id => parseInt(id.trim())).filter(id => id > 0);
-  }
-
-  // Если нет параметра — показываем примеры товаров (твои offer_id)
-  if (productIds.length === 0) {
-    productIds = [/* твои тестовые ID, например */ 123456, 789012, 345678]; // ← замени на реальные
-  }
-
-  loadProducts(productIds);
-}
-
-// Загрузка списка товаров
-async function loadProducts(ids) {
-  const container = document.getElementById('products');
+document.addEventListener('DOMContentLoaded', () => {
+  const productsContainer = document.getElementById('products');
   const loading = document.getElementById('loading');
   const errorDiv = document.getElementById('error');
 
-  container.innerHTML = '';
-  loading.style.display = 'block';
-  errorDiv.style.display = 'none';
+  // ← Здесь твой список реальных offer_id (замени на свои!)
+  const allProductIds = [
+    747802,     // пример из старого кода
+    143427,     // второй пример
+    // добавь сюда ВСЕ ID товаров, которые хочешь показывать по умолчанию
+    // 123456,
+    // 789012,
+    // 345678,
+    // ... и так далее
+  ];
 
-  for (const id of ids) {
-    try {
-      const res = await fetch(`https://sigma.strd.ru/pcgi/api/product3.pl?id=${id}`);
-      if (!res.ok) throw new Error('Ошибка API');
-      const data = await res.json();
-
-      if (!data.success) throw new Error(data.error || 'Товар не найден');
-
-      renderProduct(data);
-    } catch (err) {
-      console.error('Ошибка загрузки товара', id, err);
-      // Можно добавить placeholder-карточку с ошибкой
-    }
+  if (allProductIds.length === 0) {
+    showError("Список товаров пуст. Добавьте ID в allProductIds в app.js");
+    loading.style.display = 'none';
+    return;
   }
 
-  loading.style.display = 'none';
-}
+  loading.textContent = `Загружаем ${allProductIds.length} товаров...`;
 
-// Отрисовка одной карточки
-function renderProduct(data) {
-  const container = document.getElementById('products');
+  // Загружаем все товары параллельно (быстрее)
+  Promise.all(
+    allProductIds.map(id =>
+      fetch(`https://sigma.strd.ru/pcgi/api/product3.pl?id=${id}`)
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status} для id=${id}`);
+          return res.json();
+        })
+        .catch(err => ({ success: false, error: err.message, id }))
+    )
+  )
+  .then(results => {
+    loading.style.display = 'none';
 
-  const card = document.createElement('div');
-  card.className = 'card';
+    let loadedCount = 0;
+    results.forEach(data => {
+      if (data.success) {
+        renderProduct(data);
+        loadedCount++;
+      } else {
+        console.warn(`Товар ${data.id} не загрузился:`, data.error);
+      }
+    });
 
-  // Фото (первое или fallback)
-  const img = document.createElement('img');
-  img.src = data.images?.[0] || 'https://via.placeholder.com/300x220?text=Нет+фото';
-  img.alt = data.name;
-  img.loading = 'lazy';
+    if (loadedCount === 0) {
+      showError("Ни один товар не загрузился. Проверьте ID и доступность API.");
+    } else if (loadedCount < results.length) {
+      showError(`Загружено ${loadedCount} из ${results.length} товаров. Остальные недоступны.`);
+    }
+  })
+  .catch(err => {
+    loading.style.display = 'none';
+    showError("Ошибка загрузки: " + err.message);
+  });
 
-  // Контент
-  const content = document.createElement('div');
-  content.className = 'card-content';
+  function renderProduct(data) {
+    const card = document.createElement('div');
+    card.className = 'card';
 
-  content.innerHTML = `
-    <div class="card-title">${data.name}</div>
-    <div class="card-price">${data.price} ₽</div>
-    <div class="card-unit">за ${data.unit}</div>
-    <div class="props">
-      <div>Артикул: ${data.article}</div>
-      ${Object.entries(data.properties || {}).map(([k, v]) => `<div>${k}: ${v}</div>`).join('')}
-    </div>
-  `;
+    const img = document.createElement('img');
+    img.src = data.images?.[0] || 'https://via.placeholder.com/300x220?text=Нет+фото';
+    img.alt = data.name || 'Товар';
+    img.loading = 'lazy';
 
-  card.appendChild(img);
-  card.appendChild(content);
-  container.appendChild(card);
-}
+    const content = document.createElement('div');
+    content.className = 'card-content';
 
-function showError(msg) {
-  document.getElementById('error').textContent = msg;
-  document.getElementById('error').style.display = 'block';
-  document.getElementById('loading').style.display = 'none';
-}
+    content.innerHTML = `
+      <div class="card-title">${data.name || 'Без названия'}</div>
+      <div class="card-price">${data.price || '?'} ₽</div>
+      <div class="card-unit">за ${data.unit || 'шт'}</div>
+      <div class="props">
+        <div>Арт: ${data.article || '—'}</div>
+        ${Object.entries(data.properties || {})
+          .map(([key, val]) => `<div>${key}: ${val}</div>`)
+          .join('')}
+      </div>
+    `;
 
-// Запуск после загрузки DOM и Bridge
-document.addEventListener('DOMContentLoaded', () => {
-  // Даём время на загрузку скрипта Bridge (обычно быстро)
-  setTimeout(initApp, 500);
+    card.appendChild(img);
+    card.appendChild(content);
+    productsContainer.appendChild(card);
+  }
+
+  function showError(msg) {
+    errorDiv.textContent = msg;
+    errorDiv.style.display = 'block';
+  }
 });
