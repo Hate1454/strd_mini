@@ -1,84 +1,68 @@
-// app.js — версия "показать ВСЕ товары из all_products.pl"
+// app.js — загружает ВСЕ товары из all_products.pl (2025-01-27 версия)
 
 document.addEventListener('DOMContentLoaded', () => {
   const productsContainer = document.getElementById('products');
   const loading = document.getElementById('loading');
   const errorDiv = document.getElementById('error');
 
-  // ────────────────────────────────────────────────
-  // Настройки
-  // ────────────────────────────────────────────────
   const API_BASE = 'https://sigma.strd.ru/pcgi/api';
-  const CORS_PROXY = 'https://corsproxy.io/?';  // пока используем прокси
+  const CORS_PROXY = 'https://corsproxy.io/?';  // пока используем, потом уберём
 
-  const BATCH_SIZE = 10;  // сколько товаров загружать одновременно
+  const BATCH_SIZE = 8;  // маленькими пачками, чтобы не перегружать браузер
 
-  // ────────────────────────────────────────────────
-  // Получаем start_param из MAX (если есть)
-  // ────────────────────────────────────────────────
-  let productIds = [];
-  const startParam = window.WebApp?.initDataUnsafe?.start_param || '';
-
-  if (startParam) {
-    // Если передан через ?startapp=112893,747802,143427
-    productIds = startParam
-      .split(',')
-      .map(id => parseInt(id.trim()))
-      .filter(id => id > 0);
-  }
-
-  // ────────────────────────────────────────────────
-  // Основная функция загрузки
-  // ────────────────────────────────────────────────
-  async function loadProducts() {
-    loading.textContent = 'Получаем список товаров...';
+  async function loadAllProducts() {
+    loading.textContent = 'Получаем полный список товаров...';
     errorDiv.style.display = 'none';
+    productsContainer.innerHTML = ''; // очищаем на всякий случай
 
     try {
-      // 1. Получаем список ID
-      const listUrl = startParam
-        ? `${CORS_PROXY}${encodeURIComponent(`${API_BASE}/product3.pl?id=${productIds.join(',')}`)}`  // если start_param — загружаем только их
-        : `${CORS_PROXY}${encodeURIComponent(`${API_BASE}/all_products.pl`)}`;
-
+      // Запрашиваем список всех ID
+      const listUrl = `${CORS_PROXY}${encodeURIComponent(API_BASE + '/all_products.pl')}`;
       const listRes = await fetch(listUrl);
-      if (!listRes.ok) throw new Error(`Ошибка списка: ${listRes.status}`);
+
+      if (!listRes.ok) {
+        throw new Error(`Ошибка получения списка: ${listRes.status} ${listRes.statusText}`);
+      }
 
       const listData = await listRes.json();
 
-      if (!listData.success) {
-        throw new Error(listData.error || 'Не удалось получить список товаров');
+      if (!listData.success || !Array.isArray(listData.ids)) {
+        throw new Error(listData.error || 'Неверный формат ответа от all_products.pl');
       }
 
-      const ids = listData.ids || [];
-      if (ids.length === 0) {
-        showError('Каталог пуст');
+      const ids = listData.ids;
+      const total = ids.length;
+
+      if (total === 0) {
+        showError('Каталог пуст (ids = 0)');
         loading.style.display = 'none';
         return;
       }
 
-      loading.textContent = `Найдено ${ids.length} товаров. Загружаем...`;
+      loading.textContent = `Найдено ${total} товаров. Загружаем...`;
 
-      // 2. Загружаем пачками
-      let loadedCount = 0;
+      let loaded = 0;
 
-      for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      // Загружаем пачками
+      for (let i = 0; i < total; i += BATCH_SIZE) {
         const batch = ids.slice(i, i + BATCH_SIZE);
-        loading.textContent = `Загружаем ${loadedCount + 1}–${Math.min(loadedCount + BATCH_SIZE, ids.length)} из ${ids.length}...`;
+        loading.textContent = `Загружаем ${loaded + 1}–${Math.min(loaded + batch.length, total)} из ${total}...`;
 
-        await Promise.all(
+        await Promise.allSettled(
           batch.map(async (id) => {
             try {
               const url = `${CORS_PROXY}${encodeURIComponent(`${API_BASE}/product3.pl?id=${id}`)}`;
               const res = await fetch(url);
-              if (!res.ok) return;
+
+              if (!res.ok) return; // пропускаем молча
 
               const data = await res.json();
               if (data.success) {
                 renderProduct(data);
-                loadedCount++;
+                loaded++;
               }
             } catch {
-              // тихо пропускаем ошибочные товары
+              // ошибки отдельных товаров игнорируем
             }
           })
         );
@@ -86,22 +70,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
       loading.style.display = 'none';
 
-      if (loadedCount === 0) {
-        showError('Не удалось загрузить ни одного товара');
-      } else if (loadedCount < ids.length) {
-        showError(`Загружено ${loadedCount} из ${ids.length}. Некоторые товары недоступны.`);
+      if (loaded === 0) {
+        showError(`Загружено 0 товаров из ${total}. Возможно, проблема с product3.pl`);
+      } else if (loaded < total) {
+        showError(`Загружено ${loaded} из ${total}. Некоторые товары не открылись.`);
       }
 
     } catch (err) {
       loading.style.display = 'none';
-      showError('Ошибка: ' + err.message);
+      showError('Не удалось загрузить каталог: ' + err.message);
       console.error(err);
     }
   }
 
-  // ────────────────────────────────────────────────
-  // Отрисовка карточки товара
-  // ────────────────────────────────────────────────
   function renderProduct(data) {
     const card = document.createElement('div');
     card.className = 'card';
@@ -121,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <div class="props">
         <div>Арт: ${data.article || '—'}</div>
         ${Object.entries(data.properties || {})
-          .map(([key, val]) => `<div>${key}: ${val}</div>`)
+          .map(([k, v]) => `<div>${k}: ${v}</div>`)
           .join('')}
       </div>
     `;
@@ -136,6 +117,6 @@ document.addEventListener('DOMContentLoaded', () => {
     errorDiv.style.display = 'block';
   }
 
-  // Запускаем загрузку
-  loadProducts();
+  // Запуск
+  loadAllProducts();
 });
