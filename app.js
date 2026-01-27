@@ -1,65 +1,107 @@
-// app.js — версия "показать все товары сразу"
+// app.js — версия "показать ВСЕ товары из all_products.pl"
 
 document.addEventListener('DOMContentLoaded', () => {
   const productsContainer = document.getElementById('products');
   const loading = document.getElementById('loading');
   const errorDiv = document.getElementById('error');
 
-  // ← Здесь твой список реальных offer_id (замени на свои!)
-  const allProductIds = [
-    112893,
-    747802,     // пример из старого кода
-    143427,     // второй пример
-    // добавь сюда ВСЕ ID товаров, которые хочешь показывать по умолчанию
-    // 123456,
-    // 789012,
-    // 345678,
-    // ... и так далее
-  ];
+  // ────────────────────────────────────────────────
+  // Настройки
+  // ────────────────────────────────────────────────
+  const API_BASE = 'https://sigma.strd.ru/pcgi/api';
+  const CORS_PROXY = 'https://corsproxy.io/?';  // пока используем прокси
 
-  if (allProductIds.length === 0) {
-    showError("Список товаров пуст. Добавьте ID в allProductIds в app.js");
-    loading.style.display = 'none';
-    return;
+  const BATCH_SIZE = 10;  // сколько товаров загружать одновременно
+
+  // ────────────────────────────────────────────────
+  // Получаем start_param из MAX (если есть)
+  // ────────────────────────────────────────────────
+  let productIds = [];
+  const startParam = window.WebApp?.initDataUnsafe?.start_param || '';
+
+  if (startParam) {
+    // Если передан через ?startapp=112893,747802,143427
+    productIds = startParam
+      .split(',')
+      .map(id => parseInt(id.trim()))
+      .filter(id => id > 0);
   }
 
-  loading.textContent = `Загружаем ${allProductIds.length} товаров...`;
+  // ────────────────────────────────────────────────
+  // Основная функция загрузки
+  // ────────────────────────────────────────────────
+  async function loadProducts() {
+    loading.textContent = 'Получаем список товаров...';
+    errorDiv.style.display = 'none';
 
-  // Загружаем все товары параллельно (быстрее)
-  Promise.all(
-    allProductIds.map(id =>
-      fetch(`https://corsproxy.io/?${encodeURIComponent('https://sigma.strd.ru/pcgi/api/product3.pl?id=' + id)}`)
-        .then(res => {
-          if (!res.ok) throw new Error(`HTTP ${res.status} для id=${id}`);
-          return res.json();
-        })
-        .catch(err => ({ success: false, error: err.message, id }))
-    )
-  )
-  .then(results => {
-    loading.style.display = 'none';
+    try {
+      // 1. Получаем список ID
+      const listUrl = startParam
+        ? `${CORS_PROXY}${encodeURIComponent(`${API_BASE}/product3.pl?id=${productIds.join(',')}`)}`  // если start_param — загружаем только их
+        : `${CORS_PROXY}${encodeURIComponent(`${API_BASE}/all_products.pl`)}`;
 
-    let loadedCount = 0;
-    results.forEach(data => {
-      if (data.success) {
-        renderProduct(data);
-        loadedCount++;
-      } else {
-        console.warn(`Товар ${data.id} не загрузился:`, data.error);
+      const listRes = await fetch(listUrl);
+      if (!listRes.ok) throw new Error(`Ошибка списка: ${listRes.status}`);
+
+      const listData = await listRes.json();
+
+      if (!listData.success) {
+        throw new Error(listData.error || 'Не удалось получить список товаров');
       }
-    });
 
-    if (loadedCount === 0) {
-      showError("Ни один товар не загрузился. Проверьте ID и доступность API.");
-    } else if (loadedCount < results.length) {
-      showError(`Загружено ${loadedCount} из ${results.length} товаров. Остальные недоступны.`);
+      const ids = listData.ids || [];
+      if (ids.length === 0) {
+        showError('Каталог пуст');
+        loading.style.display = 'none';
+        return;
+      }
+
+      loading.textContent = `Найдено ${ids.length} товаров. Загружаем...`;
+
+      // 2. Загружаем пачками
+      let loadedCount = 0;
+
+      for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+        const batch = ids.slice(i, i + BATCH_SIZE);
+        loading.textContent = `Загружаем ${loadedCount + 1}–${Math.min(loadedCount + BATCH_SIZE, ids.length)} из ${ids.length}...`;
+
+        await Promise.all(
+          batch.map(async (id) => {
+            try {
+              const url = `${CORS_PROXY}${encodeURIComponent(`${API_BASE}/product3.pl?id=${id}`)}`;
+              const res = await fetch(url);
+              if (!res.ok) return;
+
+              const data = await res.json();
+              if (data.success) {
+                renderProduct(data);
+                loadedCount++;
+              }
+            } catch {
+              // тихо пропускаем ошибочные товары
+            }
+          })
+        );
+      }
+
+      loading.style.display = 'none';
+
+      if (loadedCount === 0) {
+        showError('Не удалось загрузить ни одного товара');
+      } else if (loadedCount < ids.length) {
+        showError(`Загружено ${loadedCount} из ${ids.length}. Некоторые товары недоступны.`);
+      }
+
+    } catch (err) {
+      loading.style.display = 'none';
+      showError('Ошибка: ' + err.message);
+      console.error(err);
     }
-  })
-  .catch(err => {
-    loading.style.display = 'none';
-    showError("Ошибка загрузки: " + err.message);
-  });
+  }
 
+  // ────────────────────────────────────────────────
+  // Отрисовка карточки товара
+  // ────────────────────────────────────────────────
   function renderProduct(data) {
     const card = document.createElement('div');
     card.className = 'card';
@@ -93,4 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
     errorDiv.textContent = msg;
     errorDiv.style.display = 'block';
   }
+
+  // Запускаем загрузку
+  loadProducts();
 });
