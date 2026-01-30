@@ -2,23 +2,15 @@ const API_URL = 'https://sigma.strd.ru/pcgi/api/product4.pl';
 
 fetch(API_URL)
   .then(r => {
-    console.log('HTTP status:', r.status);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   })
   .then(data => {
-    console.log('API data:', data);
+    console.log('API DATA:', data);
 
-    if (!data.success) {
-      console.error('API success=false');
-      return;
-    }
+    if (!data.success) return;
 
     const root = document.getElementById('products');
-
-    if (!data.items.length) {
-      root.innerHTML = '<p>Товары не найдены</p>';
-      return;
-    }
 
     data.items.forEach(p => {
       const div = document.createElement('div');
@@ -34,5 +26,5 @@ fetch(API_URL)
     });
   })
   .catch(err => {
-    console.error('FETCH ERROR:', err);
+    console.error('API ERROR:', err);
   });
