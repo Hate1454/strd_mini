@@ -1,4 +1,4 @@
-const API_URL = 'https://sigma.strd.ru/pcgi/api/product4.pl';
+const API_URL = 'https://sigma.strd.ru/pcgi/api/product4.pl/';
 
 fetch(API_URL)
   .then(r => {
