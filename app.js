@@ -1,4 +1,4 @@
-const API = 'https://sigma.strd.ru/pcgi/api/product4.pl';
+const API = 'https://sigma.strd.ru/pcgi/api/product4.pl/';
 let offset = 0;
 const limit = 20;
 let loading = false;
