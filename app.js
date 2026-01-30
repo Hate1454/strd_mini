@@ -1,48 +1,39 @@
-const API_URL = 'https://sigma.strd.ru/pcgi/api/product4.pl/';
-const root = document.getElementById('products');
-
+const API = 'https://sigma.strd.ru/pcgi/api/product4.pl';
 let offset = 0;
-const limit = 50;
+const limit = 20;
 let loading = false;
-let finished = false;
 
-function loadProducts() {
-  if (loading || finished) return;
-
+async function loadMore() {
+  if (loading) return;
   loading = true;
 
-  fetch(`${API_URL}?limit=${limit}&offset=${offset}`)
-    .then(r => r.json())
-    .then(data => {
-      if (!data.success || !data.items.length) {
-        finished = true;
-        return;
-      }
+  const r = await fetch(`${API}?limit=${limit}&offset=${offset}`);
+  const data = await r.json();
 
-      data.items.forEach(p => {
-        const div = document.createElement('div');
-        div.className = 'product';
+  if (!data.items.length) return;
 
-        div.innerHTML = `
-          <img src="${p.images?.[0] || p.image}" loading="lazy">
-          <h3>${p.name}</h3>
-          <b>${p.price} ₽ / ${p.unit}</b>
-        `;
+  const root = document.getElementById('products');
 
-        root.appendChild(div);
-      });
+  data.items.forEach(p => {
+    const d = document.createElement('div');
+    d.className = 'product';
+    d.innerHTML = `
+      <img src="${p.image}">
+      <h3>${p.name}</h3>
+      <b>от ${p.price_from} ₽</b>
+      <div class="muted">${p.variants} вариантов</div>
+    `;
+    root.appendChild(d);
+  });
 
-      offset += limit;
-    })
-    .finally(() => loading = false);
+  offset += limit;
+  loading = false;
 }
 
-// первая загрузка
-loadProducts();
-
-// infinite scroll
 window.addEventListener('scroll', () => {
   if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 300) {
-    loadProducts();
+    loadMore();
   }
 });
+
+loadMore();
