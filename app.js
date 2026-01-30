@@ -1,4 +1,5 @@
-const API_URL = 'https://sigma.strd.ru/pcgi/api/product4.pl';
+const API_URL = 'https://sigma.strd.ru/pcgi/api/product4.pl/';
+const root = document.getElementById('products');
 
 let offset = 0;
 const limit = 50;
@@ -7,17 +8,16 @@ let finished = false;
 
 function loadProducts() {
   if (loading || finished) return;
+
   loading = true;
 
   fetch(`${API_URL}?limit=${limit}&offset=${offset}`)
     .then(r => r.json())
     .then(data => {
-      if (!data.success || data.items.length === 0) {
+      if (!data.success || !data.items.length) {
         finished = true;
         return;
       }
-
-      const root = document.getElementById('products');
 
       data.items.forEach(p => {
         const div = document.createElement('div');
@@ -33,18 +33,14 @@ function loadProducts() {
       });
 
       offset += limit;
-      loading = false;
     })
-    .catch(err => {
-      console.error(err);
-      loading = false;
-    });
+    .finally(() => loading = false);
 }
 
 // первая загрузка
 loadProducts();
 
-// автоподгрузка при скролле
+// infinite scroll
 window.addEventListener('scroll', () => {
   if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 300) {
     loadProducts();
