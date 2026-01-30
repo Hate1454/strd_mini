@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const errorDiv = document.getElementById('error');
 
   const API_BASE = 'https://sigma.strd.ru/pcgi/api';
-  const CORS_PROXY = 'https://corsproxy.io/?';
+  const API_URL = 'https://sigma.strd.ru/pcgi/api/products4.pl';
 
   async function loadAll() {
     loading.textContent = 'Получаем список всех товаров...';
